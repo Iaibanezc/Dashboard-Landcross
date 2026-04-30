@@ -394,9 +394,9 @@ for flag_col, comp_name in FLAG_COL_TO_COMP.items():
 
     # Buscar columna de vida por nombre (case insensitive)
     matches = [
-        c for c in df.columns
-        if comp_name.lower() in c.lower()
-    ]
+    c for c in df.columns
+    if c.strip().lower() == comp_name.strip().lower()
+]
 
     if len(matches) == 0:
         # Debug opcional
@@ -425,18 +425,6 @@ for flag_col, life_col in auto_map.items():
         df[f"_flag_{comp_name}"] = (df[life_col] >= thr).astype(int)
     else:
         df[f"_flag_{comp_name}"] = 0
-
-# ─────────────────────────────────────────────────────────────────
-#  VALIDACIÓN (puedes comentar después)
-# ─────────────────────────────────────────────────────────────────
-
-total_components_debug = sum(
-    df[f"_flag_{comp}"].sum()
-    for comp in FLAG_COL_TO_COMP.values()
-    if f"_flag_{comp}" in df.columns
-)
-
-# st.write("DEBUG TOTAL COMPONENTS:", total_components_debug)
 
 # ─────────────────────────────────────────────────────────────────
 #  COSTOS DINÁMICOS
