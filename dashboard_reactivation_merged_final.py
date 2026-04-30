@@ -430,7 +430,7 @@ for flag_col, life_col in auto_map.items():
 
         # EXACTAMENTE igual que Excel: IF(life >= threshold, 1, 0)
         df[f"_flag_{comp_name}"] = (
-    df[life_col].round(4) >= round(thr, 4)
+    (df[life_col] + 1e-9) >= thr
 ).astype(int)
     else:
         df[f"_flag_{comp_name}"] = 0
