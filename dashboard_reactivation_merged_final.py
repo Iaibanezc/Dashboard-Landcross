@@ -375,28 +375,44 @@ def apply_dynamic_component_costs(dataframe):
 # ─────────────────────────────────────────────────────────────────
 #  ACTIVE DATASET
 # ─────────────────────────────────────────────────────────────────
-active_dts = TOP19_DTS + [int(x) for x in extra_dts]
+
+# Evitar duplicados de DTs
+active_dts = list(set(TOP19_DTS + [int(x) for x in extra_dts]))
+
 df = df_base[df_base["DT"].isin(active_dts)].copy()
 
-# -------------------------------------------------------------
-# AUTO-MAPPING COMPONENT LIFE FROM EXCEL (K → AG)
-# -------------------------------------------------------------
+# Limpiar nombres de columnas
+df.columns = df.columns.str.strip()
 
-# columnas de vida (K → AG)
-life_cols = df.columns[10:33]   # ajustar si necesario
+# ─────────────────────────────────────────────────────────────────
+#  AUTO-MAPPING COMPONENT LIFE (BASED ON NAMES, NOT POSITION)
+# ─────────────────────────────────────────────────────────────────
 
-# columnas de flags (BB → BU)
-flag_cols = df.columns[53:76]   # ajustar si necesario
+auto_map = {}
 
-# asegurar mismo tamaño
-assert len(life_cols) == len(flag_cols), "Mismatch life vs flag columns"
+for flag_col, comp_name in FLAG_COL_TO_COMP.items():
 
-# construir mapping automático
-auto_map = dict(zip(flag_cols, life_cols))
+    # Buscar columna de vida por nombre (case insensitive)
+    matches = [
+        c for c in df.columns
+        if comp_name.lower() in c.lower()
+    ]
 
-# -------------------------------------------------------------
-# GENERAR FLAGS DINÁMICOS (igual que Excel)
-# -------------------------------------------------------------
+    if len(matches) == 0:
+        # Debug opcional
+        # st.warning(f"No life column found for {comp_name}")
+        continue
+
+    if len(matches) > 1:
+        # Tomar la mejor coincidencia (la más corta suele ser la correcta)
+        matches = sorted(matches, key=len)
+
+    auto_map[flag_col] = matches[0]
+
+# ─────────────────────────────────────────────────────────────────
+#  GENERAR FLAGS DINÁMICOS (MISMA LÓGICA QUE EXCEL)
+# ─────────────────────────────────────────────────────────────────
+
 for flag_col, life_col in auto_map.items():
 
     comp_name = FLAG_COL_TO_COMP.get(flag_col)
@@ -404,11 +420,33 @@ for flag_col, life_col in auto_map.items():
 
     if life_col in df.columns and cat in thresholds:
         thr = thresholds[cat]
+
+        # EXACTAMENTE igual que Excel: IF(life >= threshold, 1, 0)
         df[f"_flag_{comp_name}"] = (df[life_col] >= thr).astype(int)
     else:
         df[f"_flag_{comp_name}"] = 0
 
+# ─────────────────────────────────────────────────────────────────
+#  VALIDACIÓN (puedes comentar después)
+# ─────────────────────────────────────────────────────────────────
+
+total_components_debug = sum(
+    df[f"_flag_{comp}"].sum()
+    for comp in FLAG_COL_TO_COMP.values()
+    if f"_flag_{comp}" in df.columns
+)
+
+# st.write("DEBUG TOTAL COMPONENTS:", total_components_debug)
+
+# ─────────────────────────────────────────────────────────────────
+#  COSTOS DINÁMICOS
+# ─────────────────────────────────────────────────────────────────
+
 df = apply_dynamic_component_costs(df)
+
+# ─────────────────────────────────────────────────────────────────
+#  SORTING
+# ─────────────────────────────────────────────────────────────────
 
 df_cost_sorted  = df.sort_values("Total_Cost", ascending=False).reset_index(drop=True)
 df_crack_sorted = df.sort_values("Weighted criteria", ascending=False).reset_index(drop=True)
