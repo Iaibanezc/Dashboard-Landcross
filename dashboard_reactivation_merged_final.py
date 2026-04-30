@@ -376,34 +376,83 @@ def apply_dynamic_component_costs(dataframe):
 #  ACTIVE DATASET
 # ─────────────────────────────────────────────────────────────────
 
-active_dts = list(set(TOP19_DTS + [int(x) for x in extra_dts]))
+active_dts = list(dict.fromkeys(TOP19_DTS + [int(x) for x in extra_dts]))
 df = df_base[df_base["DT"].isin(active_dts)].copy()
-
 df.columns = df.columns.str.strip()
 
 # ─────────────────────────────────────────────────────────────────
-#  EXACT EXCEL LOGIC (POSITION-BASED)
+#  EXACT EXCEL FORMULA LOGIC
+#  Reads BB:BU formulas and uses the real referenced life column
 # ─────────────────────────────────────────────────────────────────
 
-# Columnas de vida (K → AG)
-life_cols = df_base.iloc[:, 10:33].columns
+import re
+from openpyxl import load_workbook
+from openpyxl.utils import column_index_from_string
 
-# Columnas de flags (BB → BU)
-flag_cols = df_base.iloc[:, 53:76].columns
+@st.cache_data
+def build_excel_formula_map(excel_path):
+    wb = load_workbook(excel_path, data_only=False)
+    ws = wb["Structural"]
 
-assert len(life_cols) == len(flag_cols), "Mismatch between life and flag columns"
+    # Row in Rules & Rate -> category name
+    rule_row_to_cat = {
+        2: "Hydraulic",
+        3: "Electrical",
+        4: "Final Drives",
+        5: "Engine",
+        6: "Body",
+    }
 
-# Generar flags dinámicos EXACTAMENTE como Excel
-for i, (flag_col, life_col) in enumerate(zip(flag_cols, life_cols)):
+    formula_map = {}
 
-    comp_name = FLAG_COL_TO_COMP.get(flag_col)
-    cat       = COMP_CATEGORY.get(comp_name)
+    # BB:BU = Excel columns 54:73 / Python index 53:72
+    for flag_idx in range(53, 73):
+        flag_col = df_base.columns[flag_idx].strip()
+
+        formula = ws.cell(row=2, column=flag_idx + 1).value
+        match = re.search(r"\$B\$(\d+)\s*<=\s*([A-Z]+)\d+", str(formula))
+
+        if not match:
+            continue
+
+        rule_row = int(match.group(1))
+        life_excel_col = match.group(2)
+        life_idx = column_index_from_string(life_excel_col) - 1
+        life_col = df_base.columns[life_idx].strip()
+
+        cat = rule_row_to_cat.get(rule_row)
+
+        formula_map[flag_col] = {
+            "life_col": life_col,
+            "category": cat,
+            "formula": formula,
+        }
+
+    return formula_map
+
+
+EXCEL_FORMULA_MAP = build_excel_formula_map(str(EXCEL_PATH))
+
+# ─────────────────────────────────────────────────────────────────
+#  GENERATE FLAGS USING THE SAME LOGIC AS EXCEL
+# ─────────────────────────────────────────────────────────────────
+
+for flag_col, comp_name in FLAG_COL_TO_COMP.items():
+
+    formula_info = EXCEL_FORMULA_MAP.get(flag_col)
+
+    if formula_info is None:
+        df[f"_flag_{comp_name}"] = 0
+        continue
+
+    life_col = formula_info["life_col"]
+    cat = formula_info["category"]
 
     if life_col in df.columns and cat in thresholds:
         thr = thresholds[cat]
 
         df[f"_flag_{comp_name}"] = (
-            df[life_col].fillna(0) >= thr
+            pd.to_numeric(df[life_col], errors="coerce").fillna(0) >= thr
         ).astype(int)
     else:
         df[f"_flag_{comp_name}"] = 0
