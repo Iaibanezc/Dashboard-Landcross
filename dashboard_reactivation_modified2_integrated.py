@@ -1009,133 +1009,105 @@ with tab_kits:
 #  TAB 4 — REACTIVATION GANTT
 # ═══════════════════════════════════════════════════════════════
 with tab_gantt:
-    st.markdown('<div class="section-title">Reactivation Schedule — Labour Duration by Truck</div>',
-                unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Reactivation Schedule — Labour Duration by Truck</div>',
+        unsafe_allow_html=True
+    )
 
     gcol1, gcol2 = st.columns([1, 2], gap="large")
+
     with gcol1:
         gantt_start_date = st.date_input(
-            "Project start date", value=date.today(),
-            help="Schedule starts here; each truck starts 10 days before the previous finishes.",
+            "Project start date",
+            value=date.today(),
+            help="Schedule starts here; each truck starts before the previous finishes.",
         )
         overlap_days = st.slider("Overlap between trucks (days)", 0, 20, 10, 1)
 
-    # Build Gantt data sorted by Total Labour ascending
+    # ---------- PREPARE DATA ----------
     gantt_df = df[["DT", "Total Labour", "Total_Cost"]].copy()
-    gantt_df = gantt_df.sort_values(["Total Labour", "Total_Cost"], ascending=[True, True]).reset_index(drop=True)
+
+    # Ordenar por menor a mayor horas (como ya lo hacías)
+    gantt_df = gantt_df.sort_values(
+        ["Total Labour", "Total_Cost"],
+        ascending=[True, True]
+    ).reset_index(drop=True)
+
+    # Duración en días
     gantt_df["Duration_Days"] = gantt_df["Total Labour"] / 24.0
 
+    # ---------- BUILD SCHEDULE ----------
     starts, finishes = [], []
     current_start = pd.Timestamp(gantt_start_date)
+
     for _, row in gantt_df.iterrows():
-        dur  = max(float(row["Duration_Days"]), 0.1)
-        fin  = current_start + pd.to_timedelta(dur, unit="D")
+        dur = max(float(row["Duration_Days"]), 0.1)
+        fin = current_start + pd.to_timedelta(dur, unit="D")
+
         starts.append(current_start)
         finishes.append(fin)
+
+        # Solapamiento
         current_start = fin - pd.Timedelta(days=overlap_days)
 
-    gantt_df["Start"]       = starts
-    gantt_df["Finish"]      = finishes
-    gantt_df["Duration_ms"] = (gantt_df["Finish"] - gantt_df["Start"]).dt.total_seconds() * 1000
-    gantt_df["DT_Label"]    = gantt_df["DT"].astype(int).astype(str)
+    gantt_df["Start"] = starts
+    gantt_df["Finish"] = finishes
+    gantt_df["DT_Label"] = gantt_df["DT"].astype(int).astype(str)
 
-    # Bar thickness proportional to Total Labour hours
-    max_labour    = gantt_df["Total Labour"].max()
-    min_gap       = 0.05   # minimum gap between bars
-    # bargap = 1 - (avg_bar_fraction); we scale bar fraction to [0.3, 0.9]
-    gantt_df["bar_frac"] = 0.3 + 0.6 * (gantt_df["Total Labour"] / max_labour)
+    # ---------- GANTT (PX.TIMELINE) ----------
+    fig_gantt = px.timeline(
+        gantt_df,
+        x_start="Start",
+        x_end="Finish",
+        y="DT_Label",
+        color="Total Labour",
+        color_continuous_scale="Oranges"
+    )
 
-    # Plotly doesn't allow per-bar width in horizontal bar charts,
-    # so we use a fixed bargap and encode width via the bar label / color intensity.
-    # Instead we build a scatter waterfall to show relative weight.
-    labour_norm  = (gantt_df["Total Labour"] - gantt_df["Total Labour"].min())
-    labour_norm  = labour_norm / labour_norm.max() if labour_norm.max() > 0 else labour_norm
-    # Color: gradient from orange-light to orange-dark based on labour hours
-    def labour_color(v):
-        # v in [0,1]: 0 = shortest = light orange, 1 = longest = strong orange/red
-        r = int(255 - 35 * v)
-        g = int(155 - 110 * v)
-        b = int(35 - 25 * v)
-        return f"rgb({max(r,0)},{max(g,0)},{max(b,0)})"
-
-    bar_fill_colors = [labour_color(v) for v in labour_norm]
-    bar_labels      = gantt_df.apply(
-        lambda r: f"DT {int(r['DT'])}  |  {r['Duration_Days']:.1f} d  |  {int(r['Total Labour'])} hrs  |  ${r['Total_Cost']:,.0f}",
-        axis=1,
-    ).tolist()
-
-    fig_gantt = go.Figure(go.Bar(
-        x=gantt_df["Duration_ms"],
-        y=gantt_df["DT_Label"],
-        base=gantt_df["Start"],
-        orientation="h",
-        width=0.78,
-        marker=dict(
-            color=bar_fill_colors,
-            line=dict(color="#1A1A1A", width=0.8),
-        ),
-        text=bar_labels,
+    # Texto dentro de barras
+    fig_gantt.update_traces(
+        text=[
+            f"{r['Duration_Days']:.1f} d | {int(r['Total Labour'])} h | ${r['Total_Cost']:,.0f}"
+            for _, r in gantt_df.iterrows()
+        ],
         textposition="inside",
         insidetextanchor="middle",
-        textfont=dict(size=9, family="Barlow Condensed", color="#FFFFFF"),
-        hovertemplate=(
-            "DT %{y}<br>"
-            "Start: %{base|%b %d, %Y}<br>"
-            "Finish: %{customdata[0]}<br>"
-            "Labour: %{customdata[1]:,.0f} hrs<br>"
-            "Duration: %{customdata[2]:.1f} days<br>"
-            "Total Cost: $%{customdata[3]:,.0f}<extra></extra>"
-        ),
-        customdata=list(zip(
-            gantt_df["Finish"].dt.strftime("%b %d, %Y"),
-            gantt_df["Total Labour"],
-            gantt_df["Duration_Days"],
-            gantt_df["Total_Cost"],
-        )),
-    ))
+        marker_line_width=1,
+        opacity=0.95
+    )
 
-    # Add total labour as a secondary bubble size annotation
-    for _, row in gantt_df.iterrows():
-        mid_ts = row["Start"] + (row["Finish"] - row["Start"]) / 2
-        fig_gantt.add_annotation(
-            x=mid_ts, y=row["DT_Label"],
-            text=f"{int(row['Total Labour'])} hrs",
-            showarrow=False,
-            font=dict(size=7.5, family="Barlow Condensed", color="rgba(255,255,255,0.6)"),
-            yshift=-10,
-        )
-
+    # ---------- LAYOUT ----------
     fig_gantt.update_layout(
         margin=dict(l=10, r=30, t=30, b=50),
-        height=max(620, 46 * len(gantt_df)),
+        height=max(650, 45 * len(gantt_df)),
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#F9F9F9",
         font=dict(family="Barlow", color="#1A1A1A"),
-        title=dict(
-            text="Bar width = calendar days &nbsp;|&nbsp; Color intensity = total labour hours",
-            font=dict(size=11, color="#888888", family="Barlow Condensed"),
-            x=0, pad=dict(l=0),
-        ),
+
         xaxis=dict(
             title="Schedule Date",
             type="date",
             tickformat="%b %d",
             showgrid=True,
             gridcolor="#EEEEEE",
-            tickfont=dict(size=9, family="Barlow Condensed"),
-            range=[gantt_df["Start"].min() - pd.Timedelta(days=3), gantt_df["Finish"].max() + pd.Timedelta(days=3)],
+            range=[
+                gantt_df["Start"].min() - pd.Timedelta(days=3),
+                gantt_df["Finish"].max() + pd.Timedelta(days=3)
+            ]
         ),
+
         yaxis=dict(
             title="Truck DT",
-            type="category",
-            categoryorder="array",
-            categoryarray=gantt_df["DT_Label"].tolist(),
             autorange="reversed",
-            tickfont=dict(size=10, family="Barlow Condensed", color="#1A1A1A"),
-            gridcolor="#EEEEEE",
+            tickfont=dict(size=10, family="Barlow Condensed"),
         ),
-        bargap=0.08,
+
+        coloraxis_colorbar=dict(
+            title="Labour Hours",
+            thickness=12
+        )
     )
+
     st.plotly_chart(fig_gantt, use_container_width=True, config={"displayModeBar": False})
 
     # Summary KPIs
@@ -1155,12 +1127,6 @@ with tab_gantt:
         st.markdown(
             f'<div class="kpi-card"><div class="kpi-label">Calendar Span</div>'
             f'<div class="kpi-value" style="font-size:1.45rem;">{total_cal:.0f} d</div></div>',
-            unsafe_allow_html=True)
-    with cgd:
-        st.markdown(
-            f'<div class="kpi-card"><div class="kpi-label">Total Labour Hours</div>'
-            f'<div class="kpi-value" style="font-size:1.45rem;">{gantt_df["Total Labour"].sum():,.0f}</div>'
-            f'<div class="kpi-sub">across all trucks</div></div>',
             unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────
