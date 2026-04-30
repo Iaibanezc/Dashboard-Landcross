@@ -20,28 +20,39 @@ import os
 from datetime import date
 from pathlib import Path
 
-# ─────────────────────────────────────────────────────────────────
-#  PATHS  (files sit next to this script)
-# ─────────────────────────────────────────────────────────────────
-BASE_DIR   = Path(__file__).parent
-EXCEL_PATH = BASE_DIR / "Data_base_Reactivation.xlsx"
-LOGO_PATH  = BASE_DIR / "LANDCROS_logo_orange_RGB-1.webp"
+# ---------- PATHS ----------
+EXCEL_PATH = "Data base Reactivation.xlsx"  # ← nombre EXACTO del archivo
+LOGO_PATH = "LANDCROS logo_orange_RGB-1.webp"
 
+# ---------- LOAD LOGO ----------
 @st.cache_data
-def load_logo_b64():
-    with open(LOGO_PATH, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+def load_logo_b64(path):
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except Exception:
+        return None
 
+# ---------- LOAD DATA ----------
 @st.cache_data
-def load_data():
-    structural  = pd.read_excel(EXCEL_PATH, sheet_name="Structural")
-    rules       = pd.read_excel(EXCEL_PATH, sheet_name="Rules & Rate")
-    labour_sht  = pd.read_excel(EXCEL_PATH, sheet_name="Labour")
-    comp_costs  = pd.read_excel(EXCEL_PATH, sheet_name="Component $")
+def load_data(path):
+    if not os.path.exists(path):
+        st.error(f"Excel file not found: {path}")
+        st.stop()
+
+    structural  = pd.read_excel(path, sheet_name="Structural")
+    rules       = pd.read_excel(path, sheet_name="Rules & Rate")
+    labour_sht  = pd.read_excel(path, sheet_name="Labour")
+    comp_costs  = pd.read_excel(path, sheet_name="Component $")
+
     return structural, rules, labour_sht, comp_costs
 
-LOGO_B64 = load_logo_b64()
-structural, rules, labour_sht, comp_costs = load_data()
+# ---------- EXECUTION ----------
+LOGO_B64 = load_logo_b64(LOGO_PATH)
+
+structural, rules, labour_sht, comp_costs = load_data(EXCEL_PATH)
 
 # ─────────────────────────────────────────────────────────────────
 #  CONSTANTS
