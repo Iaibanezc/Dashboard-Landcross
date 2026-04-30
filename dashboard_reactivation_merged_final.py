@@ -429,7 +429,9 @@ for flag_col, life_col in auto_map.items():
         thr = thresholds[cat]
 
         # EXACTAMENTE igual que Excel: IF(life >= threshold, 1, 0)
-        df[f"_flag_{comp_name}"] = (df[life_col] >= thr).astype(int)
+        df[f"_flag_{comp_name}"] = (
+    df[life_col].round(4) >= round(thr, 4)
+).astype(int)
     else:
         df[f"_flag_{comp_name}"] = 0
 
