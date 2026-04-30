@@ -392,23 +392,27 @@ auto_map = {}
 
 for flag_col, comp_name in FLAG_COL_TO_COMP.items():
 
-    # Buscar columna de vida por nombre (case insensitive)
-    matches = [
-    c for c in df.columns
-    if comp_name.lower() == c.lower()
-]
-
-if len(matches) == 0:
-    # fallback controlado (no ambiguo)
+    # MATCH EXACTO (primera opción)
     matches = [
         c for c in df.columns
-        if comp_name.lower() in c.lower()
+        if c.strip().lower() == comp_name.strip().lower()
     ]
 
-if len(matches) > 1:
-    # 🔴 evitar ambigüedad
-    st.warning(f"Multiple matches for {comp_name}: {matches}")
-    continue
+    # FALLBACK CONTROLADO
+    if len(matches) == 0:
+        matches = [
+            c for c in df.columns
+            if comp_name.lower() in c.lower()
+        ]
+
+    # 🔴 SI HAY MÁS DE UNO → NO USAR continue, manejar explícitamente
+    if len(matches) > 1:
+        # elegir el más corto (más probable correcto)
+        matches = sorted(matches, key=len)
+
+    if len(matches) == 0:
+        # no encontró nada → dejarlo en 0 después
+        continue
 
     auto_map[flag_col] = matches[0]
 
