@@ -376,50 +376,25 @@ def apply_dynamic_component_costs(dataframe):
 #  ACTIVE DATASET
 # ─────────────────────────────────────────────────────────────────
 
-# Evitar duplicados de DTs
 active_dts = list(set(TOP19_DTS + [int(x) for x in extra_dts]))
-
 df = df_base[df_base["DT"].isin(active_dts)].copy()
 
-# Limpiar nombres de columnas
 df.columns = df.columns.str.strip()
 
 # ─────────────────────────────────────────────────────────────────
-#  AUTO-MAPPING COMPONENT LIFE (BASED ON NAMES, NOT POSITION)
+#  EXACT EXCEL LOGIC (POSITION-BASED)
 # ─────────────────────────────────────────────────────────────────
 
-auto_map = {}
+# Columnas de vida (K → AG)
+life_cols = df_base.iloc[:, 10:33].columns
 
-# Corrección para replicar exactamente la fórmula del Excel
-MANUAL_LIFE_OVERRIDES = {
-    "Accum steer right": "Accum steer left",
-}
+# Columnas de flags (BB → BU)
+flag_cols = df_base.iloc[:, 53:76].columns
 
-for flag_col, comp_name in FLAG_COL_TO_COMP.items():
-    life_col = MANUAL_LIFE_OVERRIDES.get(comp_name)
+assert len(life_cols) == len(flag_cols), "Mismatch between life and flag columns"
 
-    if life_col is None:
-        matches = [
-            c for c in df.columns
-            if c.strip().lower() == comp_name.strip().lower()
-        ]
-        life_col = matches[0] if matches else None
-
-    cat = COMP_CATEGORY.get(comp_name)
-
-    if life_col in df.columns and cat in thresholds:
-        thr = thresholds[cat]
-        df[f"_flag_{comp_name}"] = (df[life_col].fillna(0) >= thr).astype(int)
-    else:
-        df[f"_flag_{comp_name}"] = 0
-
-    auto_map[flag_col] = matches[0]
-
-# ─────────────────────────────────────────────────────────────────
-#  GENERAR FLAGS DINÁMICOS (MISMA LÓGICA QUE EXCEL)
-# ─────────────────────────────────────────────────────────────────
-
-for flag_col, life_col in auto_map.items():
+# Generar flags dinámicos EXACTAMENTE como Excel
+for i, (flag_col, life_col) in enumerate(zip(flag_cols, life_cols)):
 
     comp_name = FLAG_COL_TO_COMP.get(flag_col)
     cat       = COMP_CATEGORY.get(comp_name)
@@ -427,10 +402,9 @@ for flag_col, life_col in auto_map.items():
     if life_col in df.columns and cat in thresholds:
         thr = thresholds[cat]
 
-        # EXACTAMENTE igual que Excel: IF(life >= threshold, 1, 0)
         df[f"_flag_{comp_name}"] = (
-    (df[life_col] + 1e-9) >= thr
-).astype(int)
+            df[life_col].fillna(0) >= thr
+        ).astype(int)
     else:
         df[f"_flag_{comp_name}"] = 0
 
