@@ -93,7 +93,7 @@ COMP_CATEGORY = {
     "Final Drive right":     "Final Drives",
     "Final Drive left":      "Final Drives",
     "Engine":                "Engine",
-    "Operator Cab":          "Body",
+    "Operator Cab":          "Electrical",
     "Frame":                 "Body",
     "Body":                  "Body",
     "Body reapirs":          "Body",
@@ -277,15 +277,6 @@ with st.sidebar:
     else:
         st.markdown('<div class="sidebar-logo"><b>LANDCROS</b></div>', unsafe_allow_html=True)
 
-    st.markdown("### Replacement Thresholds")
-    st.markdown(
-        '<p style="font-size:0.77rem;color:#888;margin-bottom:14px;">'
-        "A component flag activates when its life&nbsp;% &ge; threshold.<br>"
-        "<b style='color:#FF6B00;'>Raising the threshold = fewer components flagged.</b><br>"
-        "Thresholds update component counts and dynamic component-related costs in Fleet Overview.</p>",
-        unsafe_allow_html=True,
-    )
-
     # Sliders initialised from Rules & Rate default values
     t_hyd = st.slider("Hydraulic",    0.0, 1.0, CATEGORY_DEFAULTS["Hydraulic"],    0.01, format="%.2f")
     t_ele = st.slider("Electrical",   0.0, 1.0, CATEGORY_DEFAULTS["Electrical"],   0.01, format="%.2f")
@@ -390,14 +381,15 @@ df = df_base[df_base["DT"].isin(active_dts)].copy()
 # Recalculate component flags using dynamic thresholds
 # Rule: flag = 1 when life% >= threshold  (same logic as Excel IF formula)
 for flag_col, comp_name in FLAG_COL_TO_COMP.items():
-    if flag_col in df.columns:
-        cat      = COMP_CATEGORY.get(comp_name)
-        life_col = COMP_LIFE_COL.get(comp_name)
-        if cat and life_col and life_col in df.columns:
-            thr = thresholds[cat]
-            df[f"_flag_{comp_name}"] = (df[life_col] >= thr).astype(int)
-        else:
-            df[f"_flag_{comp_name}"] = df[flag_col].fillna(0).astype(int)
+    life_col = COMP_LIFE_COL.get(comp_name)
+    cat      = COMP_CATEGORY.get(comp_name)
+
+    if life_col and life_col in df.columns and cat in thresholds:
+        thr = thresholds[cat]
+        df[f"_flag_{comp_name}"] = (df[life_col] >= thr).astype(int)
+    else:
+        # 🚨 IMPORTANTE: no usar el flag original
+        df[f"_flag_{comp_name}"] = 0
 
 df = apply_dynamic_component_costs(df)
 
