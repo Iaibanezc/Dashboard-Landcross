@@ -395,17 +395,20 @@ for flag_col, comp_name in FLAG_COL_TO_COMP.items():
     # Buscar columna de vida por nombre (case insensitive)
     matches = [
     c for c in df.columns
-    if c.strip().lower().replace(" ", "") == comp_name.strip().lower().replace(" ", "")
+    if comp_name.lower() == c.lower()
 ]
 
-    if len(matches) == 0:
-        # Debug opcional
-        # st.warning(f"No life column found for {comp_name}")
-        continue
+if len(matches) == 0:
+    # fallback controlado (no ambiguo)
+    matches = [
+        c for c in df.columns
+        if comp_name.lower() in c.lower()
+    ]
 
-    if len(matches) > 1:
-        # Tomar la mejor coincidencia (la más corta suele ser la correcta)
-        matches = sorted(matches, key=len)
+if len(matches) > 1:
+    # 🔴 evitar ambigüedad
+    st.warning(f"Multiple matches for {comp_name}: {matches}")
+    continue
 
     auto_map[flag_col] = matches[0]
 
