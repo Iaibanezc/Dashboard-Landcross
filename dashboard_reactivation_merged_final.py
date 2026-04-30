@@ -378,17 +378,34 @@ def apply_dynamic_component_costs(dataframe):
 active_dts = TOP19_DTS + [int(x) for x in extra_dts]
 df = df_base[df_base["DT"].isin(active_dts)].copy()
 
-# Recalculate component flags using dynamic thresholds
-# Rule: flag = 1 when life% >= threshold  (same logic as Excel IF formula)
-for flag_col, comp_name in FLAG_COL_TO_COMP.items():
-    life_col = COMP_LIFE_COL.get(comp_name)
-    cat      = COMP_CATEGORY.get(comp_name)
+# -------------------------------------------------------------
+# AUTO-MAPPING COMPONENT LIFE FROM EXCEL (K → AG)
+# -------------------------------------------------------------
 
-    if life_col and life_col in df.columns and cat in thresholds:
+# columnas de vida (K → AG)
+life_cols = df.columns[10:33]   # ajustar si necesario
+
+# columnas de flags (BB → BU)
+flag_cols = df.columns[53:76]   # ajustar si necesario
+
+# asegurar mismo tamaño
+assert len(life_cols) == len(flag_cols), "Mismatch life vs flag columns"
+
+# construir mapping automático
+auto_map = dict(zip(flag_cols, life_cols))
+
+# -------------------------------------------------------------
+# GENERAR FLAGS DINÁMICOS (igual que Excel)
+# -------------------------------------------------------------
+for flag_col, life_col in auto_map.items():
+
+    comp_name = FLAG_COL_TO_COMP.get(flag_col)
+    cat       = COMP_CATEGORY.get(comp_name)
+
+    if life_col in df.columns and cat in thresholds:
         thr = thresholds[cat]
         df[f"_flag_{comp_name}"] = (df[life_col] >= thr).astype(int)
     else:
-        # 🚨 IMPORTANTE: no usar el flag original
         df[f"_flag_{comp_name}"] = 0
 
 df = apply_dynamic_component_costs(df)
