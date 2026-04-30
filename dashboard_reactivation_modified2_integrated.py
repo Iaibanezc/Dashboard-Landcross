@@ -1009,133 +1009,69 @@ with tab_kits:
 #  TAB 4 — REACTIVATION GANTT
 # ═══════════════════════════════════════════════════════════════
 with tab_gantt:
-    st.markdown(
-        '<div class="section-title">Reactivation Schedule — Labour Duration by Truck</div>',
-        unsafe_allow_html=True
+    st.markdown('<div class="section-title">Reactivation Gantt — Labour Duration by Truck</div>', unsafe_allow_html=True)
+    gantt_start_date = st.date_input(
+        "Project start date",
+        value=date.today(),
+        help="The schedule is recalculated from this start date. Each next truck starts 10 days before the previous truck finishes.",
     )
 
-    gcol1, gcol2 = st.columns([1, 2], gap="large")
+    gantt_df = df[["DT","Total Labour","Total_Cost"]].copy()
+    gantt_df = gantt_df.sort_values(["Total Labour","Total_Cost"], ascending=[True, True]).reset_index(drop=True)
+    gantt_df["Duration_Days"] = gantt_df["Total Labour"] / 24
 
-    with gcol1:
-        gantt_start_date = st.date_input(
-            "Project start date",
-            value=date.today(),
-            help="Schedule starts here; each truck starts before the previous finishes.",
-        )
-        overlap_days = st.slider("Overlap between trucks (days)", 0, 20, 10, 1)
-
-    # ---------- PREPARE DATA ----------
-    gantt_df = df[["DT", "Total Labour", "Total_Cost"]].copy()
-
-    # Ordenar por menor a mayor horas (como ya lo hacías)
-    gantt_df = gantt_df.sort_values(
-        ["Total Labour", "Total_Cost"],
-        ascending=[True, True]
-    ).reset_index(drop=True)
-
-    # Duración en días
-    gantt_df["Duration_Days"] = gantt_df["Total Labour"] / 24.0
-
-    # ---------- BUILD SCHEDULE ----------
     starts, finishes = [], []
     current_start = pd.Timestamp(gantt_start_date)
-
     for _, row in gantt_df.iterrows():
-        dur = max(float(row["Duration_Days"]), 0.1)
-        fin = current_start + pd.to_timedelta(dur, unit="D")
-
+        duration_days = max(float(row["Duration_Days"]), 0.1)
+        finish = current_start + pd.to_timedelta(duration_days, unit="D")
         starts.append(current_start)
-        finishes.append(fin)
-
-        # Solapamiento
-        current_start = fin - pd.Timedelta(days=overlap_days)
+        finishes.append(finish)
+        current_start = finish - pd.Timedelta(days=10)
 
     gantt_df["Start"] = starts
     gantt_df["Finish"] = finishes
+    gantt_df["Duration_ms"] = (gantt_df["Finish"] - gantt_df["Start"]).dt.total_seconds() * 1000
     gantt_df["DT_Label"] = gantt_df["DT"].astype(int).astype(str)
-
-    # ---------- GANTT (PX.TIMELINE) ----------
-    fig_gantt = px.timeline(
-        gantt_df,
-        x_start="Start",
-        x_end="Finish",
-        y="DT_Label",
-        color="Total Labour",
-        color_continuous_scale="Oranges"
+    gantt_df["Bar_Label"] = gantt_df.apply(
+        lambda r: f'DT {int(r["DT"])} | {r["Duration_Days"]:.1f} d | ${r["Total_Cost"]:,.0f}', axis=1
     )
 
-    # Texto dentro de barras
-    fig_gantt.update_traces(
-        text=[
-            f"{r['Duration_Days']:.1f} d | {int(r['Total Labour'])} h | ${r['Total_Cost']:,.0f}"
-            for _, r in gantt_df.iterrows()
-        ],
+    fig_gantt = go.Figure(go.Bar(
+        x=gantt_df["Duration_ms"],
+        y=gantt_df["DT_Label"],
+        base=gantt_df["Start"],
+        orientation="h",
+        marker_color="#FF6B00",
+        text=gantt_df["Bar_Label"],
         textposition="inside",
         insidetextanchor="middle",
-        marker_line_width=1,
-        opacity=0.95
-    )
-
-    # ---------- LAYOUT ----------
+        textfont=dict(size=10, family="Barlow Condensed", color="#FFFFFF"),
+        hovertemplate=(
+            "DT %{y}<br>Start: %{base|%b-%d-%Y}<br>Finish: %{customdata[0]|%b-%d-%Y}"
+            "<br>Labour: %{customdata[1]:,.0f} hrs<br>Duration: %{customdata[2]:.1f} days"
+            "<br>Total cost: $%{customdata[3]:,.0f}<extra></extra>"
+        ),
+        customdata=list(zip(gantt_df["Finish"].astype(str), gantt_df["Total Labour"], gantt_df["Duration_Days"], gantt_df["Total_Cost"])),
+    ))
     fig_gantt.update_layout(
-        margin=dict(l=10, r=30, t=30, b=50),
-        height=max(650, 45 * len(gantt_df)),
-        paper_bgcolor="#FFFFFF",
-        plot_bgcolor="#F9F9F9",
+        margin=dict(l=10,r=10,t=10,b=40), height=max(520, 26*len(gantt_df)),
+        paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
         font=dict(family="Barlow", color="#1A1A1A"),
-
-        xaxis=dict(
-            title="Schedule Date",
-            type="date",
-            tickformat="%b %d",
-            showgrid=True,
-            gridcolor="#EEEEEE",
-            range=[
-                gantt_df["Start"].min() - pd.Timedelta(days=3),
-                gantt_df["Finish"].max() + pd.Timedelta(days=3)
-            ]
-        ),
-
-        yaxis=dict(
-            title="Truck DT",
-            autorange="reversed",
-            tickfont=dict(size=10, family="Barlow Condensed"),
-        ),
-
-        coloraxis_colorbar=dict(
-            title="Labour Hours",
-            thickness=12
-        )
+        xaxis=dict(title="Schedule date", type="date", tickformat="%b-%d", showgrid=True, gridcolor="#F0F0F0"),
+        yaxis=dict(title="Truck DT", type="category", categoryorder="array", categoryarray=gantt_df["DT_Label"].tolist(), autorange="reversed", tickfont=dict(size=9, family="Barlow Condensed")),
+        bargap=0.28,
     )
+    st.plotly_chart(fig_gantt, use_container_width=True, config={"displayModeBar":False})
 
-    st.plotly_chart(fig_gantt, use_container_width=True, config={"displayModeBar": False})
-
-    # Summary KPIs
-    cga, cgb, cgc, cgd = st.columns(4)
+    cga, cgb, cgc = st.columns(3)
     with cga:
-        st.markdown(
-            f'<div class="kpi-card"><div class="kpi-label">First Start</div>'
-            f'<div class="kpi-value" style="font-size:1.45rem;">{gantt_df["Start"].min():%b %d}</div></div>',
-            unsafe_allow_html=True)
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">First Start</div><div class="kpi-value" style="font-size:1.45rem;">{gantt_df["Start"].min():%b-%d}</div></div>', unsafe_allow_html=True)
     with cgb:
-        st.markdown(
-            f'<div class="kpi-card"><div class="kpi-label">Final Finish</div>'
-            f'<div class="kpi-value" style="font-size:1.45rem;">{gantt_df["Finish"].max():%b %d}</div></div>',
-            unsafe_allow_html=True)
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">Final Finish</div><div class="kpi-value" style="font-size:1.45rem;">{gantt_df["Finish"].max():%b-%d}</div></div>', unsafe_allow_html=True)
     with cgc:
-        total_cal = (gantt_df["Finish"].max() - gantt_df["Start"].min()).total_seconds() / 86400
-        st.markdown(
-            f'<div class="kpi-card"><div class="kpi-label">Calendar Span</div>'
-            f'<div class="kpi-value" style="font-size:1.45rem;">{total_cal:.0f} d</div></div>',
-            unsafe_allow_html=True)
+        total_calendar_days = (gantt_df["Finish"].max() - gantt_df["Start"].min()).total_seconds()/86400
+        st.markdown(f'<div class="kpi-card"><div class="kpi-label">Calendar Span</div><div class="kpi-value" style="font-size:1.45rem;">{total_calendar_days:.1f} d</div></div>', unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────────────────────────
-#  FOOTER
-# ─────────────────────────────────────────────────────────────────
-st.markdown(
-    '<div class="lc-footer">'
-    '<span>Landcros &mdash; Fleet Reactivation Analysis</span>'
-    '<span>Data: Data base Reactivation.xlsx</span>'
-    '</div>',
-    unsafe_allow_html=True,
-)
+
+st.markdown('<div class="lc-footer"><span>Landcros &mdash; Fleet Reactivation Analysis</span><span>Data: Data_base_Reactivation.xlsx</span></div>', unsafe_allow_html=True)
