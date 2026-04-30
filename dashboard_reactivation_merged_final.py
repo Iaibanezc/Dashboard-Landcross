@@ -395,7 +395,7 @@ for flag_col, comp_name in FLAG_COL_TO_COMP.items():
     # Buscar columna de vida por nombre (case insensitive)
     matches = [
     c for c in df.columns
-    if c.strip().lower() == comp_name.strip().lower()
+    if c.strip().lower().replace(" ", "") == comp_name.strip().lower().replace(" ", "")
 ]
 
     if len(matches) == 0:
