@@ -390,29 +390,28 @@ df.columns = df.columns.str.strip()
 
 auto_map = {}
 
+# Corrección para replicar exactamente la fórmula del Excel
+MANUAL_LIFE_OVERRIDES = {
+    "Accum steer right": "Accum steer left",
+}
+
 for flag_col, comp_name in FLAG_COL_TO_COMP.items():
+    life_col = MANUAL_LIFE_OVERRIDES.get(comp_name)
 
-    # MATCH EXACTO (primera opción)
-    matches = [
-        c for c in df.columns
-        if c.strip().lower() == comp_name.strip().lower()
-    ]
-
-    # FALLBACK CONTROLADO
-    if len(matches) == 0:
+    if life_col is None:
         matches = [
             c for c in df.columns
-            if comp_name.lower() in c.lower()
+            if c.strip().lower() == comp_name.strip().lower()
         ]
+        life_col = matches[0] if matches else None
 
-    # 🔴 SI HAY MÁS DE UNO → NO USAR continue, manejar explícitamente
-    if len(matches) > 1:
-        # elegir el más corto (más probable correcto)
-        matches = sorted(matches, key=len)
+    cat = COMP_CATEGORY.get(comp_name)
 
-    if len(matches) == 0:
-        # no encontró nada → dejarlo en 0 después
-        continue
+    if life_col in df.columns and cat in thresholds:
+        thr = thresholds[cat]
+        df[f"_flag_{comp_name}"] = (df[life_col].fillna(0) >= thr).astype(int)
+    else:
+        df[f"_flag_{comp_name}"] = 0
 
     auto_map[flag_col] = matches[0]
 
