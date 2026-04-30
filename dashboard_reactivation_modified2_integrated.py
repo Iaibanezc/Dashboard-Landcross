@@ -12,6 +12,18 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+st.markdown("""
+<style>
+header {visibility: hidden;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+
+.block-container {
+    padding-top: 1rem;
+}
+</style>
+""", unsafe_allow_html=True)
+
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
